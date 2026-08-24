@@ -1,0 +1,22 @@
+# CI for the public Metta-AI/agent-boundary mirror. In the Softmax monorepo
+# this file is inert (GitHub only runs workflows from the repo root); Copybara
+# moves it to .github/workflows/ci.yml in the mirror.
+#
+# The gate integration tests (tests/test_gate.py) self-skip here: they need
+# nono and the Softmax monorepo's profile/skill layout. The monorepo CI runs
+# them.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v6
+      - name: Run tests
+        run: uv run --extra test pytest -v

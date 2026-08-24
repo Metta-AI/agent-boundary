@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "agent-boundary"
+version = "0.1.0"
+description = "OS-enforced filesystem boundaries for agent sessions and local commands."
+readme = "README.md"
+requires-python = ">=3.11,<3.13"
+license = "MIT"
+dependencies = ["click>=8.1", "pydantic>=2.12.2", "pyyaml>=6.0.2", "typer>=0.19.2"]
+
+[project.optional-dependencies]
+test = ["pytest>=8.0"]
+
+[project.scripts]
+agent-boundary = "agent_boundary.entrypoint:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["agent_boundary", "agent_boundary.*"]
+
+[tool.setuptools.package-data]
+agent_boundary = ["py.typed"]
+
+[tool.pytest.ini_options]
+pythonpath = ["src"]
+testpaths = ["tests"]
+
+[tool.uv]
+cache-keys = [{ file = "pyproject.toml" }, { file = "src/**/*.py" }]
