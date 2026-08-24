@@ -10,7 +10,9 @@ from pathlib import Path
 
 from agent_boundary.paths import state_dir
 
-PLUGIN_PREFIX = "agent-boundary@"
+# Matches agent-boundary@<any marketplace> and the Softmax monorepo's
+# in-place copy, agent-boundary-dev@skills-dir.
+PLUGIN_PREFIX = "agent-boundary"
 SESSION_ID_RE = re.compile(r"\A[A-Za-z0-9_-]{8,64}\Z")
 GIT = shutil.which("git")
 JQ = shutil.which("jq")

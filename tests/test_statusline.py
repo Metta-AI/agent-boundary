@@ -34,7 +34,7 @@ def _write(path: Path, plugins: dict[str, bool]) -> None:
 def test_statusline_reflects_boundary_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     session = _setup(tmp_path, monkeypatch)
     settings = tmp_path / ".claude/settings.json"
-    _write(settings, {"agent-boundary@skills-dir": True})
+    _write(settings, {"agent-boundary-dev@skills-dir": True})
     config = session / "boundary.json"
     input_json = _input(tmp_path)
 
@@ -47,7 +47,7 @@ def test_statusline_reflects_boundary_state(tmp_path: Path, monkeypatch: pytest.
     config.write_text(json.dumps({"profile": "default", "state": "off", "self_edit": False}))
     assert render(input_json) == "\033[31mboundary:off\033[0m"
 
-    _write(settings, {"agent-boundary@skills-dir": False})
+    _write(settings, {"agent-boundary-dev@skills-dir": False})
     assert render(input_json) == "\033[31mboundary:off\033[0m"
 
 
