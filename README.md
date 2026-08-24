@@ -154,8 +154,11 @@ agent-boundary claude hook PreToolUse
 agent-boundary claude statusline "$input"
 ```
 
-The Claude plugin glue (hook wiring, protected runtime install) is not published yet; today it ships with the Softmax
-monorepo.
+The Claude Code plugin (hook wiring, protected runtime install) ships from this repo too: in the public repo it lives
+at `claude-plugin/`, and the repo doubles as a plugin marketplace. Install with
+`/plugin marketplace add Metta-AI/agent-boundary`, then `/plugin install agent-boundary@agent-boundary`; see the
+plugin's [README](https://github.com/Metta-AI/agent-boundary/tree/main/claude-plugin) for setup, including the starter
+profile in `examples/`.
 
 
 ## Working on it

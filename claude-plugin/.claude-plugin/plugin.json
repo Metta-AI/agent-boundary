@@ -1,0 +1,6 @@
+{
+  "name": "agent-boundary",
+  "version": "0.1.0",
+  "description": "Configurable agent boundary through hooks",
+  "defaultEnabled": false
+}

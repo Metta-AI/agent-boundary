@@ -1,0 +1,11 @@
+{
+  "name": "agent-boundary",
+  "owner": { "name": "Softmax" },
+  "plugins": [
+    {
+      "name": "agent-boundary",
+      "source": "./claude-plugin",
+      "description": "OS-enforced boundary around Claude Code sessions"
+    }
+  ]
+}

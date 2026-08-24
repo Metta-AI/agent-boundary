@@ -1,0 +1,80 @@
+#!/bin/sh
+# Everything that must run before handing things off to agent-boundary CLI: protected per-worktree runtime, install it
+# when needed, and exec it.
+#
+#   bootstrap SessionStart   install the runtime if missing, then exec the hook
+#   bootstrap PreToolUse     exec the hook (hooks.json adds the fail-closed guard)
+#   bootstrap install        force-reinstall the runtime
+set -eu
+
+# CLAUDE_PLUGIN_ROOT is always set when this script is invoked by the harness.
+# The fallback here is for debugging convenience: run .../bootstrap in terminal to check this script's behavior.
+plugin_root="${CLAUDE_PLUGIN_ROOT:-$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)}"
+
+project_dir="${CLAUDE_PROJECT_DIR:-$(git -C "$plugin_root" rev-parse --show-toplevel)}"
+# Physical path: runtimes are keyed by worktree, and the key must not depend on
+# how the caller spelled the path.
+project_dir="$(CDPATH= cd -P -- "$project_dir" && pwd)"
+state="${AGENT_BOUNDARY_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/agent-boundary}"
+runtime="$state/runtimes/$(printf '%s' "$project_dir" | sed 's/[^A-Za-z0-9]/-/g')"
+
+# Pinned package source for standalone installs (see install_runtime). Bump
+# alongside plugin.json's version; move to release tags once the public repo
+# grows them.
+package_git_ref="main"
+
+install_runtime() {
+  [ -f "$plugin_root/.claude-plugin/plugin.json" ]
+  rm -rf -- "$runtime"
+  export UV_CACHE_DIR="$state/uv-cache"
+  unset VIRTUAL_ENV
+  if [ -n "${AGENT_BOUNDARY_SOURCE_DIR:-}" ]; then
+    # AGENT_BOUNDARY_SOURCE_DIR names a uv project whose workspace carries this
+    # package (the Softmax monorepo's dev shell exports it, same pattern as
+    # AGENT_BOUNDARY_PROFILES_DIR); install from its locked source, so package
+    # edits reach the runtime on the next `bootstrap install`.
+    export UV_PROJECT_ENVIRONMENT="$runtime"
+    uv sync --project "$AGENT_BOUNDARY_SOURCE_DIR" --package agent-boundary --locked --no-editable --no-default-groups \
+      --no-python-downloads </dev/null
+  else
+    # Standalone mode: the plugin came from a marketplace; fetch the published
+    # package. AGENT_BOUNDARY_PACKAGE_SPEC overrides the source, for testing
+    # or for pinning to something else.
+    uv venv --python ">=3.11,<3.13" -- "$runtime" </dev/null
+    uv pip install --python "$runtime/bin/python" -- \
+      "${AGENT_BOUNDARY_PACKAGE_SPEC:-agent-boundary @ git+https://github.com/Metta-AI/agent-boundary@$package_git_ref}" \
+      </dev/null
+  fi
+  # Stable path for statuslines and other per-user consumers of the CLI's
+  # stable interface; last install wins.
+  mkdir -p -- "$state/bin"
+  ln -sfn -- "$runtime/bin/agent-boundary" "$state/bin/agent-boundary"
+}
+
+case "${1:-}" in
+  install)
+    install_runtime
+    ;;
+  SessionStart)
+    # Legacy in-repo state predating the XDG state dir; no longer gitignored, so
+    # it would pollute `git status` if left behind. Removing it breaks sessions
+    # started before the switch — the usual "reinstall, then restart sessions" rule.
+    rm -rf -- "$plugin_root/runtime" "$plugin_root/sessions" "$plugin_root/.uv-cache"
+
+    [ -x "$runtime/bin/agent-boundary" ] || install_runtime
+
+    # Make the installed CLI available to `!agent-boundary` and ordinary shell
+    # use for the rest of the session. Hooks themselves use its absolute path.
+    if [ -n "${CLAUDE_ENV_FILE:-}" ]; then
+      printf 'export PATH="%s:$PATH"\n' "$runtime/bin" >> "$CLAUDE_ENV_FILE"
+    fi
+    exec "$runtime/bin/agent-boundary" claude hook SessionStart
+    ;;
+  PreToolUse)
+    exec "$runtime/bin/agent-boundary" claude hook PreToolUse
+    ;;
+  *)
+    echo "usage: ${0##*/} SessionStart|PreToolUse|install" >&2
+    exit 64
+    ;;
+esac

@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/bootstrap SessionStart",
+            "timeout": 120
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}\"/bin/bootstrap PreToolUse || { echo \"[gate] hook crashed (exit $?), failing closed: tool call blocked\" >&2; exit 2; }"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,70 @@
+# Starter agent-boundary profile.
+#
+# Copy to ${XDG_CONFIG_HOME:-~/.config}/agent-boundary/profiles/default.yaml
+# and adjust — or point AGENT_BOUNDARY_PROFILES_DIR at the directory holding
+# it. Paths support $WORKDIR and $HOME; globs resolve at policy-generation
+# time (`agent-boundary reload` after edits).
+#
+# The boundary raises the floor against accidents; it is not containment.
+# Document every non-obvious grant and its tradeoff beside the grant, so the
+# profile stays reviewable.
+name: default
+description: Workdir-scoped starter boundary; secrets outside the checkout stay out of reach.
+
+self_edit: false
+
+# Keep git working in linked worktrees by granting the shared .git directory.
+# Tradeoff: .git/hooks becomes writable from inside the boundary, so code a
+# later user-run git command executes could be changed by the agent.
+git_common_dir: true
+
+# Uncomment to export short-lived credentials for one AWS profile into wrapped
+# commands (via `aws configure export-credentials`, run outside the jail)
+# while ~/.aws itself stays denied:
+# aws:
+#   profile: MyOrg/ReadonlyAccess
+
+# Uncomment to inject a GitHub token from `gh auth token` (run outside the
+# jail, where gh can reach its keychain) so gh and git-over-HTTPS work while
+# the keychain stays denied. The wrapped environment then holds a
+# push-capable token the agent can read — narrow its scope at `gh auth login`.
+# github:
+#   push: true
+
+# Uncomment to generate a minimal per-session kubeconfig from your local one:
+# kube:
+#   eks: true        # the one EKS cluster in aws.profile's account
+#   orbstack: true   # copy the local orbstack cluster/context/user
+
+allow:
+  - $WORKDIR
+  # Caches your build tools need. Keep this list short: packages planted in a
+  # shared cache can affect commands that later run outside the boundary.
+  - $HOME/.cache/uv
+
+read: []
+
+resolve_symlinks:
+  # Dotfile-managed configs are often symlink chains, and granting a symlink
+  # does not grant traversal through it — every hop needs a grant, which
+  # `resolve_symlinks` does for you. A plain file resolves to itself.
+  - path: $HOME/.gitconfig
+    access: read
+
+env:
+  # ~/.netrc stays denied (it holds real credentials), but some tools treat
+  # EPERM on it as fatal rather than absent. Point them at an empty file.
+  NETRC: /dev/null
+
+deny:
+  # Settings decide which plugins load and which permissions apply, so a
+  # sandboxed process must not be able to edit them — including creating
+  # settings.local.json when it does not exist yet.
+  - $WORKDIR/.claude/settings.json
+  - $WORKDIR/.claude/settings.local.json
+
+nono:
+  # Base nono profile to extend. Its required deny groups (ssh keys, cloud
+  # credentials, keychains, shell history, browser data) stay in force; a
+  # child profile cannot remove inherited denies.
+  extends: default
