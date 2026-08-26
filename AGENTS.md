@@ -5,7 +5,7 @@ plugin installs it non-editably into a protected runtime; source edits do not af
 
 This directory is mirrored to the public
 [Metta-AI/agent-boundary](https://github.com/Metta-AI/agent-boundary) repo; development happens in the Softmax
-monorepo.
+monorepo. Pull requests on the mirror are welcome; they are applied to the monorepo and close once the change lands.
 
 
 ## Architecture
