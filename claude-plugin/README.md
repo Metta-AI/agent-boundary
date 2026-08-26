@@ -41,6 +41,30 @@ the uv workspace named by `AGENT_BOUNDARY_SOURCE_DIR` when that is set (the Soft
 otherwise from the public repo at the revision pinned in `bin/bootstrap`. Later sessions reuse the runtime without
 consulting package source. If that first install fails, the gate fails closed.
 
+### Installing from a fork
+
+Two layers come from the repo, and they are refreshed separately:
+
+- **The plugin** (hook wiring and `bin/bootstrap`) comes from whichever marketplace you added, so point that at your
+  fork: `/plugin marketplace add <you>/agent-boundary`, or `/plugin marketplace add /path/to/checkout` for a local
+  clone. Claude Code copies the plugin into its cache; run `/plugin update agent-boundary@agent-boundary` after
+  editing it.
+- **The Python package** in the protected runtime is installed by `bin/bootstrap` from the public repo's pinned
+  revision regardless of where the plugin came from. `AGENT_BOUNDARY_PACKAGE_SPEC` overrides that source; it is
+  passed to `uv pip install` verbatim, so any requirement works:
+
+  ```text
+  agent-boundary @ file:///path/to/checkout
+  agent-boundary @ git+https://github.com/<you>/agent-boundary@<branch>
+  ```
+
+  The hooks run inside the Claude Code process, so set it where they inherit it — the `env` block of your user
+  `settings.json` does — then reinstall the runtime (`bin/bootstrap install`, or delete `runtimes/`). A plain terminal
+  has no such `env`, so pass the variable explicitly when running `bootstrap install` by hand.
+
+`AGENT_BOUNDARY_SOURCE_DIR` still takes precedence when set. It is for uv workspaces that carry the package (the Softmax
+monorepo) and needs their lockfile; a standalone checkout has none, so use the package spec.
+
 All generated state lives outside the checkout, under `${XDG_STATE_HOME:-~/.local/state}/agent-boundary/`:
 
 ```text
