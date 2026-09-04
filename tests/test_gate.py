@@ -21,22 +21,16 @@ from typing import Any
 
 import pytest
 
-PACKAGE = Path(__file__).resolve().parents[1]
-WORKTREE = PACKAGE.parents[1]
-SKILL = WORKTREE / ".claude/skills/agent-boundary"
+from .gate_test_environment import PACKAGE, PROFILES, SKILL, WORKTREE, require_gate_integration
+
 # Resolved, because state_dir() resolves: /tmp is a symlink on macOS.
 STATE = Path(tempfile.gettempdir()).resolve() / f"agent-boundary-test-{os.getpid()}"
 SESSIONS = STATE / "sessions"
-PROFILES = WORKTREE / "devops/agent-boundary/profiles"
 
 # The real-gate suite exists only where the boundary can actually run: it needs
 # nono plus the Softmax monorepo's authored profiles and plugin skill. In the
 # public mirror (and any checkout without them) it skips at collection.
-if not (PROFILES.is_dir() and SKILL.is_dir() and shutil.which("nono")):
-    pytest.skip(
-        "gate integration tests need nono and the Softmax monorepo layout (profiles, skill)",
-        allow_module_level=True,
-    )
+require_gate_integration()
 
 CLI = (sys.executable, "-m", "agent_boundary.entrypoint")
 GATE = (*CLI, "claude", "hook", "PreToolUse")

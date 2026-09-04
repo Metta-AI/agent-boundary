@@ -25,6 +25,7 @@ include = ["agent_boundary", "agent_boundary.*"]
 agent_boundary = ["py.typed"]
 
 [tool.pytest.ini_options]
+addopts = "--import-mode=importlib"
 pythonpath = ["src"]
 testpaths = ["tests"]
 
