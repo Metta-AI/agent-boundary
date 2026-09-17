@@ -35,7 +35,6 @@ self-evident.
 Profiles are supplied through `AGENT_BOUNDARY_PROFILES_DIR`. Without it, the package reads
 `${XDG_CONFIG_HOME:-~/.config}/agent-boundary/profiles`.
 
-
 Profiles are **authored** and committed to the repo, then **generated** into a concrete nono policy per session, under
 `${XDG_STATE_HOME:-~/.local/state}/agent-boundary/sessions/<session-id>/policy.json`, resolved against your machine
 (globs expanded, symlink chains followed, the real gitdir located). That state root also holds the Claude plugin's
@@ -50,7 +49,6 @@ an unexplained deny on everything.
 A generated policy is **pinned** for the life of a session. Editing a profile does not affect running sessions; to
 update the current session's policy, run `agent-boundary reload`. That's deliberate: a boundary that shifts under a
 running agent is worse than one that needs a command.
-
 
 ### AWS credentials
 
@@ -69,7 +67,6 @@ the jail. The values never appear in the command itself, so they stay out of the
 are re-issued shortly before they expire.
 
 Remove the key to hand out no AWS access at all.
-
 
 ### Kubernetes access
 
@@ -154,12 +151,11 @@ agent-boundary claude hook PreToolUse
 agent-boundary claude statusline "$input"
 ```
 
-The Claude Code plugin (hook wiring, protected runtime install) ships from this repo too: in the public repo it lives
-at `claude-plugin/`, and the repo doubles as a plugin marketplace. Install with
+The Claude Code plugin (hook wiring, protected runtime install) ships from this repo too: in the public repo it lives at
+`claude-plugin/`, and the repo doubles as a plugin marketplace. Install with
 `/plugin marketplace add Metta-AI/agent-boundary`, then `/plugin install agent-boundary@agent-boundary`; see the
 plugin's [README](https://github.com/Metta-AI/agent-boundary/tree/main/claude-plugin) for setup, including the starter
 profile in `examples/`.
-
 
 ## Working on it
 
@@ -180,7 +176,6 @@ one starts failing because the repo got more self-contained, delete the grant ra
 Two conventions to preserve when changing things: the PreToolUse command stays stdlib-only on its hot path, and all hook
 entrypoints run from the protected non-editable runtime—never from this repo's agent-writable `.venv`. Profile and
 session models use Pydantic in the less frequent writer paths.
-
 
 ## Why not...
 

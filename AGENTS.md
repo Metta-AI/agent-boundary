@@ -3,10 +3,9 @@
 This package implements harness-neutral agent boundaries plus explicit harness adapters. The Softmax monorepo's Claude
 plugin installs it non-editably into a protected runtime; source edits do not affect already-installed sessions.
 
-This directory is mirrored to the public
-[Metta-AI/agent-boundary](https://github.com/Metta-AI/agent-boundary) repo; development happens in the Softmax
-monorepo. Pull requests on the mirror are welcome; they are applied to the monorepo and close once the change lands.
-
+This directory is mirrored to the public [Metta-AI/agent-boundary](https://github.com/Metta-AI/agent-boundary) repo;
+development happens in the Softmax monorepo. Pull requests on the mirror are welcome; they are applied to the monorepo
+and close once the change lands.
 
 ## Architecture
 
@@ -31,4 +30,3 @@ an explicit session directory; harness sessions, installed runtimes, and the pri
 # run (they need nono and authored profiles).
 uv run --extra test pytest tests -v
 ```
-
