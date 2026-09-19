@@ -15,6 +15,12 @@ class LazyGroup(TyperGroup):
 
     lazy_commands: ClassVar[dict[str, str]] = {}
 
+    @classmethod
+    def build_command(cls, name: str, help: str) -> click.Command:
+        app = typer.Typer(name=name, cls=cls, help=help, no_args_is_help=True, add_completion=False)
+        app.callback()(lambda: None)
+        return get_command(app)
+
     def list_commands(self, ctx: click.Context) -> list[str]:
         return sorted({*super().list_commands(ctx), *self.lazy_commands})
 
