@@ -79,12 +79,6 @@ TOGGLE_RE = re.compile(r"\Aagent-boundary(?:\s+[a-z][a-z0-9-]*){0,2}\Z")
 # faithfully, so this check is redundant *while those entries exist* — it is kept
 # because it does not depend on the policy's contents. Generate a policy without
 # the denies and probing alone goes back to answering "allowed" here, silently.
-# Resolved per call, not at import: plugin_root() needs the hook environment,
-# and raising without it lands in the fail-closed handler.
-def self_dirs() -> tuple[Path, ...]:
-    return (claude_session.plugin_root(), state_dir())
-
-
 # tool -> operation the tool performs ("read" or "readwrite")
 PATH_TOOLS = {"Read": "read", "Edit": "readwrite", "Write": "readwrite", "NotebookEdit": "readwrite"}
 
@@ -155,35 +149,6 @@ def deny(reason: str) -> NoReturn:
     respond("deny", reason)
 
 
-def session_config(directory: Path | None) -> dict:
-    """This session's boundary.json, or {} if there is none to read."""
-    if directory is None:
-        return {}
-    try:
-        cfg = json.loads((directory / "boundary.json").read_text())
-    except (OSError, ValueError):
-        return {}
-    return cfg if isinstance(cfg, dict) else {}
-
-
-def handle_toggle(tin: dict, directory: Path):
-    """Run the mode toggle for a Bash call that is *exactly* the toggle command.
-
-    Unwrapped, because flipping the mode means writing into the skill directory
-    that the sandbox denies. Safe because TOGGLE_RE admits no shell syntax and the
-    program is our own absolute path, so nothing else can execute here, and
-    because "ask" puts the decision in front of the user rather than letting the
-    agent escalate itself.
-    """
-    argv = [str(TOGGLE), "--session-dir", str(directory), *(tin.get("command") or "").split()[1:]]
-    action = (tin.get("command") or "").removeprefix("agent-boundary").strip() or "(show current)"
-    respond(
-        "ask",
-        f"[gate] sandbox mode change for this session: {action}",
-        {**tin, "command": " ".join(shlex.quote(a) for a in argv)},
-    )
-
-
 def wrap_argv(directory: Path | None, cwd: str) -> list[str]:
     """`nono wrap` invocation prefix for this session's generated policy.
 
@@ -201,77 +166,6 @@ def wrap_argv(directory: Path | None, cwd: str) -> list[str]:
         deny(f"[gate] {error}. Run `agent-boundary reload`, or restart the session to generate one.")
 
 
-def handle_bash(tin: dict, cfg: dict, directory: Path | None, cwd: str):
-    cmd = (tin.get("command") or "").strip()
-    if not cmd:
-        deny("[gate] Bash: empty command")
-    wrap = wrap_argv(directory, cwd)  # deny-checks the policy before any credential work
-    prefix_parts = []
-    note = ""
-    if directory is not None and (kubeconfig := directory / "kubeconfig").is_file():
-        prefix_parts.append(f"export KUBECONFIG={shlex.quote(str(kubeconfig))}")
-    profile = cfg.get("aws_profile")
-    if profile:
-        if directory is None:
-            deny("[gate] invalid Claude session ID")
-        path, aws_note = aws.env_file(directory, profile)
-        note += aws_note
-        if path:
-            # Source outside the jail; nono inherits the exports. Drop profiles so
-            # SDKs do not try to read the denied ~/.aws after entering the jail.
-            prefix_parts += [f". {shlex.quote(str(path))}", "unset AWS_PROFILE AWS_DEFAULT_PROFILE"]
-    if (cfg.get("github") or {}).get("push"):
-        if directory is None:
-            deny("[gate] invalid Claude session ID")
-        path, github_note = github.env_file(directory)
-        note += github_note
-        if path:
-            prefix_parts.append(f". {shlex.quote(str(path))}")
-    prefix = " && ".join(prefix_parts)
-    wrapped = (f"{prefix} && " if prefix else "") + " ".join(shlex.quote(a) for a in [*wrap, "bash", "-c", cmd])
-    respond("allow", f"[gate] Bash sandboxed with nono{note}", {**tin, "command": wrapped})
-
-
-def probe_path(path: str, op: str, directory: Path | None, cwd: str) -> tuple[str, str]:
-    """Ask the kernel, from inside the sandbox, whether `op` on `path` is allowed."""
-    proc = subprocess.run(
-        [*wrap_argv(directory, cwd), PROBE_PYTHON, "-", path, op],
-        input=PROBE.read_text(),
-        capture_output=True,
-        text=True,
-    )
-    out = proc.stdout.strip()
-    if proc.returncode != 0 or not out:
-        # Sandbox failed to start or the probe never spoke: no verdict, fail closed.
-        detail = (proc.stderr.strip() or f"probe exited {proc.returncode}").splitlines()[0]
-        return "denied", f"probe inconclusive: {detail}"
-    verdict, _, detail = out.partition("|")
-    return verdict, detail
-
-
-def handle_path_tool(tool: str, tin: dict, cfg: dict, directory: Path | None, cwd: str):
-    path = tin.get("file_path") or tin.get("notebook_path")
-    if not path:
-        deny(f"[gate] {tool}: no path declared")
-    p = os.path.expanduser(path)
-    if not os.path.isabs(p):
-        p = os.path.join(cwd, p)
-
-    op = PATH_TOOLS[tool]
-    if op != "read" and not cfg.get("self_edit"):
-        # resolve() follows symlinks, so a link planted inside the workdir
-        # cannot launder a write to the policy or this hook.
-        target = Path(p).resolve()
-        for self_dir in self_dirs():
-            if target.is_relative_to(self_dir):
-                deny(f"[gate] {tool} {p}: refusing to let the sandbox rewrite its own policy ({self_dir})")
-
-    verdict, detail = probe_path(p, op, directory, cwd)
-    if verdict != "allowed":
-        deny(f"[gate] {tool} {p}: blocked by sandbox policy ({detail or 'denied'})")
-    respond("allow", f"[gate] {tool} allowed by sandbox probe")
-
-
 def main():
     data = json.load(sys.stdin)
     tool = data.get("tool_name", "")
@@ -279,7 +173,14 @@ def main():
     cwd = data.get("cwd") or os.getcwd()
     session_id = data.get("session_id") or ""
     directory = claude_session.session_dir(session_id)
-    cfg = session_config(directory)
+    cfg = {}
+    if directory is not None:
+        try:
+            loaded = json.loads((directory / "boundary.json").read_text())
+            if isinstance(loaded, dict):
+                cfg = loaded
+        except (OSError, ValueError):
+            pass
 
     # Only the exact string "off" disables enforcement; missing, malformed, or
     # unrecognized state leaves the boundary on.
@@ -292,13 +193,74 @@ def main():
         sys.exit(0)
 
     if tool == "Bash":
-        if TOGGLE_RE.match((tin.get("command") or "").strip()):
+        cmd = (tin.get("command") or "").strip()
+        if TOGGLE_RE.match(cmd):
             if directory is None:
                 deny("[gate] invalid Claude session ID")
-            handle_toggle(tin, directory)
-        handle_bash(tin, cfg, directory, cwd)
+            argv = [str(TOGGLE), "--session-dir", str(directory), *cmd.split()[1:]]
+            action = cmd.removeprefix("agent-boundary").strip() or "(show current)"
+            respond(
+                "ask",
+                f"[gate] sandbox mode change for this session: {action}",
+                {**tin, "command": " ".join(shlex.quote(arg) for arg in argv)},
+            )
+        if not cmd:
+            deny("[gate] Bash: empty command")
+        wrap = wrap_argv(directory, cwd)
+        prefix_parts = []
+        note = ""
+        if directory is not None and (kubeconfig := directory / "kubeconfig").is_file():
+            prefix_parts.append(f"export KUBECONFIG={shlex.quote(str(kubeconfig))}")
+        if profile := cfg.get("aws_profile"):
+            if directory is None:
+                deny("[gate] invalid Claude session ID")
+            path, aws_note = aws.env_file(directory, profile)
+            note += aws_note
+            if path:
+                prefix_parts += [
+                    f". {shlex.quote(str(path))}",
+                    "unset AWS_PROFILE AWS_DEFAULT_PROFILE",
+                ]
+        if (cfg.get("github") or {}).get("push"):
+            if directory is None:
+                deny("[gate] invalid Claude session ID")
+            path, github_note = github.env_file(directory)
+            note += github_note
+            if path:
+                prefix_parts.append(f". {shlex.quote(str(path))}")
+        prefix = " && ".join(prefix_parts)
+        wrapped = " ".join(shlex.quote(arg) for arg in [*wrap, "bash", "-c", cmd])
+        if prefix:
+            wrapped = f"{prefix} && {wrapped}"
+        respond("allow", f"[gate] Bash sandboxed with nono{note}", {**tin, "command": wrapped})
     elif tool in PATH_TOOLS:
-        handle_path_tool(tool, tin, cfg, directory, cwd)
+        path = tin.get("file_path") or tin.get("notebook_path")
+        if not path:
+            deny(f"[gate] {tool}: no path declared")
+        path = os.path.expanduser(path)
+        if not os.path.isabs(path):
+            path = os.path.join(cwd, path)
+        operation = PATH_TOOLS[tool]
+        if operation != "read" and not cfg.get("self_edit"):
+            target = Path(path).resolve()
+            for protected in (claude_session.plugin_root(), state_dir()):
+                if target.is_relative_to(protected):
+                    deny(f"[gate] {tool} {path}: refusing to let the sandbox rewrite its own policy ({protected})")
+        process = subprocess.run(
+            [*wrap_argv(directory, cwd), PROBE_PYTHON, "-", path, operation],
+            input=PROBE.read_text(),
+            capture_output=True,
+            text=True,
+        )
+        output = process.stdout.strip()
+        if process.returncode != 0 or not output:
+            detail = (process.stderr.strip() or f"probe exited {process.returncode}").splitlines()[0]
+            verdict, detail = "denied", f"probe inconclusive: {detail}"
+        else:
+            verdict, _, detail = output.partition("|")
+        if verdict != "allowed":
+            deny(f"[gate] {tool} {path}: blocked by sandbox policy ({detail or 'denied'})")
+        respond("allow", f"[gate] {tool} allowed by sandbox probe")
     elif tool in SAFE_TOOLS:
         respond("allow")
     else:
