@@ -98,10 +98,8 @@ def env_file(directory: Path, profile: str) -> tuple[Path | None, str]:
     meta = parse_meta(text)
 
     fresh = bool(text) and meta.get("profile") == profile
-    if fresh and "failed_at" in meta and time.time() - float(meta["failed_at"]) >= AWS_FAIL_TTL:
-        fresh = False
-    if fresh and "expires_at" in meta and time.time() >= float(meta["expires_at"]) - AWS_REFRESH_MARGIN:
-        fresh = False
+    fresh = fresh and ("failed_at" not in meta or time.time() - float(meta["failed_at"]) < AWS_FAIL_TTL)
+    fresh = fresh and ("expires_at" not in meta or time.time() < float(meta["expires_at"]) - AWS_REFRESH_MARGIN)
 
     if not fresh:
         record = export(profile)

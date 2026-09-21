@@ -32,34 +32,6 @@ def jq(path: Path, expression: str) -> str:
     return process.stdout.strip() if process.returncode == 0 else ""
 
 
-def _enabled(root: Path, main: Path) -> str:
-    """The verdict from the highest-precedence settings file that mentions any
-    agent-boundary plugin id ("true"/"false"), or "" when none does.
-
-    The plugin id depends on how it was installed — `agent-boundary@skills-dir`
-    in the Softmax monorepo, `agent-boundary@agent-boundary` from the public
-    marketplace — so match on the name prefix. Files are walked in Claude
-    Code's enabledPlugins precedence order: local > project > user.
-    """
-    user_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
-    for settings in (
-        root / ".claude/settings.local.json",
-        main / ".claude/settings.local.json",
-        root / ".claude/settings.json",
-        main / ".claude/settings.json",
-        user_dir / "settings.json",
-    ):
-        verdict = jq(
-            settings,
-            '.enabledPlugins // {} | with_entries(select(.key | startswith("'
-            + PLUGIN_PREFIX
-            + '"))) | if length == 0 then empty else (any(.[]; .) | tostring) end',
-        )
-        if verdict:
-            return verdict
-    return ""
-
-
 def render(input_json: str) -> str:
     if JQ is None:
         return ""
@@ -78,7 +50,23 @@ def render(input_json: str) -> str:
     root = Path(root_value)
     main = Path(common_dir).parent
 
-    enabled = _enabled(root, main)
+    enabled = ""
+    user_dir = Path(os.environ.get("CLAUDE_CONFIG_DIR") or Path.home() / ".claude")
+    for settings in (
+        root / ".claude/settings.local.json",
+        main / ".claude/settings.local.json",
+        root / ".claude/settings.json",
+        main / ".claude/settings.json",
+        user_dir / "settings.json",
+    ):
+        enabled = jq(
+            settings,
+            '.enabledPlugins // {} | with_entries(select(.key | startswith("'
+            + PLUGIN_PREFIX
+            + '"))) | if length == 0 then empty else (any(.[]; .) | tostring) end',
+        )
+        if enabled:
+            break
     if not enabled:
         # No settings file mentions the plugin, so it isn't installed for this
         # project; a statusline shared across repos stays silent.

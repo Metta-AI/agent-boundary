@@ -72,11 +72,8 @@ def env_file(directory: Path) -> tuple[Path | None, str]:
     text = path.read_text() if path.is_file() else ""
     meta = parse_meta(text)
 
-    fresh = bool(text)
-    if fresh and "failed_at" in meta and time.time() - float(meta["failed_at"]) >= GITHUB_FAIL_TTL:
-        fresh = False
-    if fresh and "exported_at" in meta and time.time() - float(meta["exported_at"]) >= GITHUB_REFRESH_SECONDS:
-        fresh = False
+    fresh = bool(text) and ("failed_at" not in meta or time.time() - float(meta["failed_at"]) < GITHUB_FAIL_TTL)
+    fresh = fresh and ("exported_at" not in meta or time.time() - float(meta["exported_at"]) < GITHUB_REFRESH_SECONDS)
 
     if not fresh:
         record = export()

@@ -110,21 +110,6 @@ class BuildResult:
     warnings: tuple[str, ...]
 
 
-def _account_id(settings: AwsSettings, path: Path) -> str | None:
-    if not path.is_file():
-        return None
-    parser = configparser.ConfigParser(interpolation=None)
-    parser.read(path)
-    section = "default" if settings.profile == "default" else f"profile {settings.profile}"
-    if not parser.has_section(section):
-        return None
-    if account := parser[section].get("sso_account_id"):
-        return account
-    if match := re.fullmatch(r"arn:[^:]+:iam::(?P<account>\d{12}):role/.+", parser[section].get("role_arn", "")):
-        return match.group("account")
-    return None
-
-
 def build(
     profile: Profile,
     *,
@@ -147,7 +132,19 @@ def build(
     if profile.kube.eks:
         aws = cast(AwsSettings, profile.aws)
         aws_config_path = aws_config_path or Path(os.environ.get("AWS_CONFIG_FILE", Path.home() / ".aws/config"))
-        account = _account_id(aws, aws_config_path)
+        account = None
+        if aws_config_path.is_file():
+            parser = configparser.ConfigParser(interpolation=None)
+            parser.read(aws_config_path)
+            section = "default" if aws.profile == "default" else f"profile {aws.profile}"
+            if parser.has_section(section):
+                account = parser[section].get("sso_account_id")
+                if not account and (
+                    match := re.fullmatch(
+                        r"arn:[^:]+:iam::(?P<account>\d{12}):role/.+", parser[section].get("role_arn", "")
+                    )
+                ):
+                    account = match.group("account")
         matches = []
         if account:
             matches = [
