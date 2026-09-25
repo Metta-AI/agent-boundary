@@ -7,13 +7,12 @@ and git's credential helper is swapped from osxkeychain — which would fail —
 to `gh auth git-credential` via GIT_CONFIG_* overrides.
 """
 
-import os
 import shlex
 import subprocess
 import time
 from pathlib import Path
 
-from agent_boundary.aws import parse_meta
+from agent_boundary.aws import parse_meta, write_env_file
 
 GITHUB_ENV_FILENAME = "github-credentials.env"
 # gh tokens carry no expiry the way STS credentials do; re-export hourly so a
@@ -78,10 +77,7 @@ def env_file(directory: Path) -> tuple[Path | None, str]:
     if not fresh:
         record = export()
         text = render_env(record)
-        temporary = path.with_name(f"{GITHUB_ENV_FILENAME}.{os.getpid()}.tmp")
-        temporary.write_text(text)
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
+        write_env_file(path, text)
         meta = parse_meta(text)
 
     if "failed_at" in meta:

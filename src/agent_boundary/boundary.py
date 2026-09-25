@@ -1,16 +1,8 @@
 #!/usr/bin/env python3
-"""Profile loading and policy generation for agent-boundary.
+"""Load authored profiles and resolve paths into concrete nono policies.
 
-Imported only by writer commands. The PreToolUse hook must never import this: it
-runs on every tool call, and generating a policy means parsing YAML and shelling
-out to git. See README.
-
-A profile (profiles/<name>.yaml) is human-authored and backend-agnostic where it
-can be. Generation resolves it against this machine — expanding globs, following
-symlink chains, asking git where the real gitdir is — and writes a concrete nono
-profile to sessions/<id>/policy.json. Anything unresolvable is dropped rather
-than emitted, because nono silently ignores grants for paths that do not exist,
-and a grant that looks present but does nothing is worse than an absent one.
+Only writers import this module; per-tool hooks read the pinned policy instead.
+Unresolvable grants are dropped because nono silently ignores missing paths.
 """
 
 import os
@@ -24,9 +16,7 @@ from pydantic import ValidationError
 from agent_boundary.models import Profile, SymlinkSpec
 from agent_boundary.paths import profiles_dir
 
-# Access kinds a profile may request, mapped to the nono filesystem key. Files and
-# directories are distinct in nono, and picking the wrong one silently grants
-# nothing, so `resolve_symlinks` chooses per path by looking at the target.
+# Nono needs distinct keys for file and directory grants.
 DIR_KEY = {"allow": "allow", "read": "read", "write": "write"}
 FILE_KEY = {"allow": "allow_file", "read": "read_file", "write": "write_file"}
 
@@ -62,19 +52,10 @@ def expand(raw: str, workdir: str) -> str:
 
 
 def symlink_chain(path: Path) -> list[Path]:
-    """Every path that must be granted for `path` to be openable.
-
-    Granting a symlink does not grant traversal *through* it, and the chain can
-    include intermediate *directory* links: ~/.gitconfig -> ~/etc/dotfiles/gitconfig
-    where ~/etc -> coding/my/etc. Granting only the link and its final target
-    still EPERMs — verified — so every hop, and every parent that is itself a
-    link, has to be named.
-    """
+    """Include every symlink hop and linked parent needed to open a path."""
     out: list[Path] = []
     seen: set[Path] = set()
-    # One hop at a time: realpath() collapses the whole chain at once and would
-    # skip right over an intermediate directory link, which is the hop that
-    # actually blocks traversal.
+    # realpath() skips intermediate links that also need grants.
     todo = [path]
     while todo:
         p = todo.pop(0)
@@ -115,9 +96,7 @@ def generate_policy(
     for kind in ("allow", "read", "write"):
         for raw in getattr(profile, kind):
             pattern = expand(raw, workdir)
-            # A glob is a claim about this machine, so resolve it now; a literal
-            # path passes through untouched so nono still sees $WORKDIR-relative
-            # entries it can expand itself.
+            # Resolve globs now; leave literal paths for nono to expand.
             if any(c in pattern for c in "*?["):
                 for hit in sorted(Path("/").glob(pattern.lstrip("/"))):
                     add(fs, DIR_KEY[kind] if hit.is_dir() else FILE_KEY[kind], str(hit))
@@ -128,9 +107,7 @@ def generate_policy(
     for raw in profile.deny:
         add(fs, "deny", expand(raw, workdir))
 
-    # Symlinked config that lives outside the boundary: grant every hop of the
-    # chain. `bypass_protection` lifts a required-group deny (shell rc files,
-    # kubeconfig); it does not grant access, so the grant above is still needed.
+    # bypass_protection lifts a required-group deny but does not grant access.
     for entry in profile.resolve_symlinks:
         if isinstance(entry, str):
             entry = SymlinkSpec(path=entry)
@@ -141,11 +118,7 @@ def generate_policy(
             if entry.bypass_protection:
                 add(fs, "bypass_protection", str(hop))
 
-    # A linked worktree keeps its gitdir under the *parent* repo's .git, outside
-    # $WORKDIR, so git cannot find its own repository without this. Writable
-    # because `git add` locks refs/heads/* — which also leaves .git/hooks
-    # writable, a known hole. Defaults on: a boundary that breaks git is a
-    # boundary nobody enables.
+    # Linked worktrees need their common gitdir, including writable lock files.
     if profile.git_common_dir:
         proc = subprocess.run(
             ["git", "-C", workdir, "rev-parse", "--path-format=absolute", "--git-common-dir"],
@@ -155,23 +128,14 @@ def generate_policy(
         if proc.returncode == 0 and proc.stdout.strip():
             common = Path(proc.stdout.strip())
             add(fs, "allow", str(common))
-            # A repo may symlink .git/hooks/* into the parent checkout's working
-            # tree (the Softmax monorepo does), which the allow above does not
-            # reach — so
-            # `git commit` dies on the pre-commit hook. Grant each hook's chain
-            # read-only: enough to execute, while the parent's copy stays
-            # unwritable (an agent-written hook would run outside the jail when
-            # the *user* commits). Hops inside the common dir are already allowed.
+            # Grant linked hooks outside the common dir read-only.
             if (common / "hooks").is_dir():
                 for hook in (common / "hooks").iterdir():
                     for hop in symlink_chain(hook):
                         if common not in hop.parents:
                             add(fs, DIR_KEY["read"] if hop.is_dir() else FILE_KEY["read"], str(hop))
 
-    # Self-protection. Without it the agent can rewrite its policy, profiles, or
-    # trusted runtime. `self_edit: true` deliberately flips these to grants: the
-    # state root lives outside every profile's allow list, so lifting the denies
-    # alone would leave a self-edit session unable to touch its own machinery.
+    # self_edit grants the protected state root, normally outside allow lists.
     for path in protected_paths:
         add(fs, "allow" if profile.self_edit else "deny", str(path))
 
@@ -180,8 +144,7 @@ def generate_policy(
         add(fs, "bypass_protection", str(path))
 
     if fs:
-        # Merge rather than replace: a profile's `nono.filesystem` is an escape
-        # hatch and must survive generation.
+        # Preserve authored nono.filesystem entries.
         for key, values in (nono_block.get("filesystem") or {}).items():
             for v in values:
                 add(fs, key, v)

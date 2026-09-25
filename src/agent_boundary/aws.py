@@ -92,6 +92,13 @@ def read_env_file(path: Path) -> dict[str, str]:
     return env
 
 
+def write_env_file(path: Path, text: str) -> None:
+    temporary = path.with_name(f"{path.name}.{os.getpid()}.tmp")
+    temporary.write_text(text)
+    os.chmod(temporary, 0o600)
+    os.replace(temporary, path)
+
+
 def env_file(directory: Path, profile: str) -> tuple[Path | None, str]:
     path = directory / AWS_ENV_FILENAME
     text = path.read_text() if path.is_file() else ""
@@ -104,10 +111,7 @@ def env_file(directory: Path, profile: str) -> tuple[Path | None, str]:
     if not fresh:
         record = export(profile)
         text = render_env(record)
-        temporary = path.with_name(f"{AWS_ENV_FILENAME}.{os.getpid()}.tmp")
-        temporary.write_text(text)
-        os.chmod(temporary, 0o600)
-        os.replace(temporary, path)
+        write_env_file(path, text)
         meta = parse_meta(text)
 
     if "failed_at" in meta:
