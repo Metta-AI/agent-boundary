@@ -93,9 +93,9 @@ def symlink_chain(path: Path) -> list[Path]:
 
 
 def add(fs: dict[str, list[str]], key: str, value: str) -> None:
-    fs.setdefault(key, [])
-    if value not in fs[key]:
-        fs[key].append(value)
+    values = fs.setdefault(key, [])
+    if value not in values:
+        values.append(value)
 
 
 def generate_policy(
@@ -123,8 +123,7 @@ def generate_policy(
                     add(fs, DIR_KEY[kind] if hit.is_dir() else FILE_KEY[kind], str(hit))
             else:
                 p = Path(pattern)
-                is_file = p.is_file() and not p.is_dir()
-                add(fs, FILE_KEY[kind] if is_file else DIR_KEY[kind], pattern)
+                add(fs, FILE_KEY[kind] if p.is_file() else DIR_KEY[kind], pattern)
 
     for raw in profile.deny:
         add(fs, "deny", expand(raw, workdir))
@@ -185,7 +184,7 @@ def generate_policy(
         # hatch and must survive generation.
         for key, values in (nono_block.get("filesystem") or {}).items():
             for v in values:
-                add(fs, key, v if isinstance(v, str) else v)
+                add(fs, key, v)
         policy["filesystem"] = fs
 
     env = {k: expand(v, workdir) for k, v in profile.env.items()}

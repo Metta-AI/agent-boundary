@@ -165,7 +165,7 @@ def test_write_uses_fixed_private_file_and_removes_stale_output(tmp_path: Path) 
 
     warnings = kubeconfig.write(
         directory,
-        profile(orbstack=False),
+        profile(),
         aws_config_path=aws_config,
         source_path=source,
     )
@@ -173,7 +173,13 @@ def test_write_uses_fixed_private_file_and_removes_stale_output(tmp_path: Path) 
     assert warnings == ()
     assert path.is_file()
     assert path.stat().st_mode & 0o777 == 0o600
-    assert yaml.safe_load(path.read_text())["current-context"] == "agent-boundary-main"
+    output = yaml.safe_load(path.read_text())
+    assert output["apiVersion"] == "v1"
+    assert output["current-context"] == "agent-boundary-main"
+    assert output["clusters"][0]["cluster"]["certificate-authority-data"] == "MAIN-CA"
+    assert output["users"][0]["user"]["exec"]["apiVersion"] == "client.authentication.k8s.io/v1beta1"
+    assert output["users"][0]["user"]["exec"]["interactiveMode"] == "Never"
+    assert output["users"][1]["user"]["client-key-data"] == "ORBSTACK-KEY"
 
     warnings = kubeconfig.write(
         directory,

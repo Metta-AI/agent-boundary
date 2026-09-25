@@ -22,21 +22,9 @@ class KubeModel(BaseModel):
 
 class Cluster(KubeModel):
     server: str
-    certificate_authority_data: str | None = Field(
-        default=None,
-        validation_alias="certificate-authority-data",
-        serialization_alias="certificate-authority-data",
-    )
-    certificate_authority: str | None = Field(
-        default=None,
-        validation_alias="certificate-authority",
-        serialization_alias="certificate-authority",
-    )
-    insecure_skip_tls_verify: bool | None = Field(
-        default=None,
-        validation_alias="insecure-skip-tls-verify",
-        serialization_alias="insecure-skip-tls-verify",
-    )
+    certificate_authority_data: str | None = Field(default=None, alias="certificate-authority-data")
+    certificate_authority: str | None = Field(default=None, alias="certificate-authority")
+    insecure_skip_tls_verify: bool | None = Field(default=None, alias="insecure-skip-tls-verify")
 
 
 class NamedCluster(KubeModel):
@@ -61,29 +49,17 @@ class ExecEnv(KubeModel):
 
 
 class Exec(KubeModel):
-    api_version: str = Field(validation_alias="apiVersion", serialization_alias="apiVersion")
+    api_version: str = Field(alias="apiVersion")
     command: str
     args: list[str] = Field(default_factory=list)
     env: list[ExecEnv] = Field(default_factory=list)
-    interactive_mode: Literal["Never", "IfAvailable", "Always"] | None = Field(
-        default=None,
-        validation_alias="interactiveMode",
-        serialization_alias="interactiveMode",
-    )
+    interactive_mode: Literal["Never", "IfAvailable", "Always"] | None = Field(default=None, alias="interactiveMode")
 
 
 class User(KubeModel):
     exec: Exec | None = None
-    client_certificate_data: str | None = Field(
-        default=None,
-        validation_alias="client-certificate-data",
-        serialization_alias="client-certificate-data",
-    )
-    client_key_data: str | None = Field(
-        default=None,
-        validation_alias="client-key-data",
-        serialization_alias="client-key-data",
-    )
+    client_certificate_data: str | None = Field(default=None, alias="client-certificate-data")
+    client_key_data: str | None = Field(default=None, alias="client-key-data")
 
 
 class NamedUser(KubeModel):
@@ -92,16 +68,12 @@ class NamedUser(KubeModel):
 
 
 class Config(KubeModel):
-    api_version: str = Field(validation_alias="apiVersion", serialization_alias="apiVersion")
+    api_version: str = Field(alias="apiVersion")
     kind: str
     clusters: list[NamedCluster] = Field(default_factory=list)
     contexts: list[NamedContext] = Field(default_factory=list)
     users: list[NamedUser] = Field(default_factory=list)
-    current_context: str = Field(
-        default="",
-        validation_alias="current-context",
-        serialization_alias="current-context",
-    )
+    current_context: str = Field(default="", alias="current-context")
 
 
 @dataclass(frozen=True)
